@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI BTC Trading Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.8s ease-in forwards;
+            opacity: 0;
+        }
+
+        .slide-up {
+            animation: slideUp 0.8s ease-out forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+        }
+
+        .glow-text-green { text-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
+        .glow-text-red { text-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+        
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-6 flex flex-col items-center">
+
+    <div class="w-full max-w-7xl">
+        
+        <header class="mb-8 text-center fade-in">
+            <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">
+                Advanced AI BTC Trading Terminal
+            </h1>
+            <p class="text-slate-400">Live predictive modeling • Dynamic sizing • Trailing stops</p>
+        </header>
+
+        <div id="loading" class="flex flex-col items-center justify-center py-20 fade-in">
+            <div class="loader mb-4"></div>
+            <p class="text-slate-300 animate-pulse">Running advanced market analysis (150-day lookback)...</p>
+        </div>
+
+        <div id="dashboard" class="hidden space-y-6">
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 slide-up" style="animation-delay: 0.1s;">
+                
+                <div class="glass-panel p-6 col-span-1 md:col-span-2 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-4 opacity-10">
+                        <svg width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21H3V3m18 8l-5-5-6 6-4-4"/></svg>
+                    </div>
+                    <h2 class="text-xl font-bold text-slate-300 mb-4 uppercase tracking-wider">Live Market Prediction</h2>
+                    <div class="flex items-end space-x-6">
+                        <div>
+                            <p class="text-sm text-slate-400 mb-1">Current Price</p>
+                            <p id="current-price" class="text-4xl font-bold text-white">$---</p>
+                        </div>
+                        <div class="pb-1">
+                            <span id="action-badge" class="px-4 py-2 rounded-full font-bold text-lg">---</span>
+                        </div>
+                    </div>
+                    <p id="prediction-reason" class="mt-4 text-slate-300 italic border-l-4 border-blue-500 pl-3">Analyzing...</p>
+                </div>
+
+                <div class="glass-panel p-6 col-span-1">
+                    <h2 class="text-xl font-bold text-slate-300 mb-4 uppercase tracking-wider">60-Day Return</h2>
+                    <div class="flex flex-col h-full justify-center pb-6">
+                        <p id="final-balance" class="text-5xl font-extrabold mb-2">$---</p>
+                        <p id="profit-pct" class="text-lg font-medium">---%</p>
+                        <div class="mt-4 text-sm text-slate-400 flex justify-between">
+                            <span>Start: $100.00</span>
+                            <span id="final-btc">Holdings: --- BTC</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 slide-up" style="animation-delay: 0.3s;">
+                <h2 class="text-xl font-bold text-slate-300 mb-4 uppercase tracking-wider">Price Action & Signals</h2>
+                <div class="relative h-96 w-full">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 slide-up" style="animation-delay: 0.5s;">
+                <h2 class="text-xl font-bold text-slate-300 mb-4 uppercase tracking-wider">Trading Ledger</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-slate-400 text-sm">
+                                <th class="pb-3 pl-2">Date</th>
+                                <th class="pb-3">Action</th>
+                                <th class="pb-3">Price</th>
+                                <th class="pb-3">Value (USD)</th>
+                                <th class="pb-3">Reason</th>
+                                <th class="pb-3 pr-2 text-right">Portfolio</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ledger-body" class="text-sm">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('/api/bot-data')
+                .then(response => response.json())
+                .then(res => {
+                    if(!res.success) {
+                        alert("Error running algorithm: " + res.error);
+                        return;
+                    }
+                    
+                    const data = res.data;
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    const dashboard = document.getElementById('dashboard');
+                    dashboard.classList.remove('hidden');
+
+                    const pred = data.prediction;
+                    document.getElementById('current-price').innerText = `$${pred.price.toLocaleString()}`;
+                    
+                    const badge = document.getElementById('action-badge');
+                    badge.innerText = pred.action;
+                    if(pred.action === "BUY") {
+                        badge.className = "px-4 py-2 rounded-full font-bold text-lg bg-green-500/20 text-green-400 border border-green-500 glow-text-green";
+                    } else if(pred.action === "SELL") {
+                        badge.className = "px-4 py-2 rounded-full font-bold text-lg bg-red-500/20 text-red-400 border border-red-500 glow-text-red";
+                    } else {
+                        badge.className = "px-4 py-2 rounded-full font-bold text-lg bg-slate-500/20 text-slate-300 border border-slate-500";
+                    }
+                    
+                    document.getElementById('prediction-reason').innerText = pred.reason;
+
+                    const perf = data.performance;
+                    document.getElementById('final-balance').innerText = `$${perf.final_balance.toFixed(2)}`;
+                    
+                    const pctEl = document.getElementById('profit-pct');
+                    const sign = perf.profit_pct >= 0 ? '+' : '';
+                    pctEl.innerText = `${sign}${perf.profit_pct}%`;
+                    pctEl.className = perf.profit_pct >= 0 ? "text-lg font-medium text-green-400" : "text-lg font-medium text-red-400";
+                    
+                    document.getElementById('final-btc').innerText = `Holdings: ${perf.final_btc} BTC`;
+
+                    const tbody = document.getElementById('ledger-body');
+                    if(data.ledger.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500">No trades executed in this timeframe based on strict parameters.</td></tr>`;
+                    } else {
+                        data.ledger.forEach((trade, index) => {
+                            const tr = document.createElement('tr');
+                            tr.className = `border-b border-slate-800 hover:bg-slate-800/50 transition-colors slide-up`;
+                            tr.style.animationDelay = `${0.6 + (index * 0.05)}s`;
+                            
+                            let actionColor = "text-slate-300";
+                            if(trade.Action === "BUY") actionColor = "text-green-400 font-semibold";
+                            if(trade.Action.includes("SELL")) actionColor = "text-red-400 font-semibold";
+
+                            tr.innerHTML = `
+                                <td class="py-3 pl-2">${trade.Date}</td>
+                                <td class="py-3 ${actionColor}">${trade.Action}</td>
+                                <td class="py-3">$${trade.Price.toLocaleString()}</td>
+                                <td class="py-3">$${trade.USD_Value.toLocaleString()}</td>
+                                <td class="py-3 text-slate-400 truncate max-w-xs">${trade.Reason}</td>
+                                <td class="py-3 pr-2 text-right font-mono">$${trade.Portfolio_Value.toLocaleString()}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    }
+
+                    const ctx = document.getElementById('priceChart').getContext('2d');
+                    
+                    const labels = data.chart.map(c => c.date);
+                    const prices = data.chart.map(c => c.price);
+                    
+                    const pointBackgroundColors = [];
+                    const pointBorderColors = [];
+                    const pointRadiuses = [];
+                    const pointStyles = [];
+
+                    data.chart.forEach(c => {
+                        if(c.action === "BUY") {
+                            pointBackgroundColors.push('#22c55e');
+                            pointBorderColors.push('#ffffff');
+                            pointRadiuses.push(8);
+                            pointStyles.push('triangle');
+                        } else if(c.action && c.action.includes("SELL")) {
+                            pointBackgroundColors.push('#ef4444');
+                            pointBorderColors.push('#ffffff');
+                            pointRadiuses.push(8);
+                            pointStyles.push('triangle');
+                        } else {
+                            pointBackgroundColors.push('transparent');
+                            pointBorderColors.push('transparent');
+                            pointRadiuses.push(0);
+                            pointStyles.push('circle');
+                        }
+                    });
+
+                    let gradient = ctx.createLinearGradient(0, 0, 0, 400);
+                    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.5)');
+                    gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'BTC Price',
+                                data: prices,
+                                borderColor: '#3b82f6',
+                                backgroundColor: gradient,
+                                borderWidth: 2,
+                                fill: true,
+                                pointBackgroundColor: pointBackgroundColors,
+                                pointBorderColor: pointBorderColors,
+                                pointRadius: pointRadiuses,
+                                pointStyle: pointStyles,
+                                pointHoverRadius: 10,
+                                rotation: (ctx) => {
+                                    const index = ctx.dataIndex;
+                                    if (data.chart[index] && data.chart[index].action && data.chart[index].action.includes("SELL")) {
+                                        return 180;
+                                    }
+                                    return 0;
+                                }
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                    titleColor: '#f8fafc',
+                                    bodyColor: '#cbd5e1',
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    borderWidth: 1,
+                                    callbacks: {
+                                        label: function(context) {
+                                            const index = context.dataIndex;
+                                            const item = data.chart[index];
+                                            let label = `Price: $${context.raw.toLocaleString()}`;
+                                            if(item.action) {
+                                                label += ` | ${item.action}`;
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                    ticks: { color: '#94a3b8', maxTicksLimit: 10 }
+                                },
+                                y: {
+                                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                    ticks: { 
+                                        color: '#94a3b8',
+                                        callback: function(value) {
+                                            return '$' + value.toLocaleString();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(err => {
+                    document.getElementById('loading').innerHTML = `<p class="text-red-400 text-center text-xl">System Error: Could not fetch data.<br>${err}</p>`;
+                });
+        });
+    </script>
+</body>
+</html>
